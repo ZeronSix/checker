@@ -115,9 +115,9 @@ def _grade_mrs(
         full_project = gitlab_connection.gitlab.projects.get(project.id)
         print_info(f'project {project.path_with_namespace}: {project.web_url}')
 
-        opened_master_mrs = full_project.mergerequests.list(state='opened', target_branch=course_config.default_branch)
-        merged_master_mrs = full_project.mergerequests.list(state='merged', target_branch=course_config.default_branch)
-        closed_master_mrs = full_project.mergerequests.list(state='closed', target_branch=course_config.default_branch)
+        opened_master_mrs = full_project.mergerequests.list(get_all=True, state='opened', target_branch=course_config.default_branch)
+        merged_master_mrs = full_project.mergerequests.list(get_all=True, state='merged', target_branch=course_config.default_branch)
+        closed_master_mrs = full_project.mergerequests.list(get_all=True, state='closed', target_branch=course_config.default_branch)
 
         if not opened_master_mrs and not merged_master_mrs and not closed_master_mrs:
             print_info('no open mrs; skip it')
@@ -205,7 +205,7 @@ def _singe_mr_grade_score_new(
 
     # Try to find score discussion
     mr_score_discussion = None
-    for discussion in mr.discussions.list():
+    for discussion in mr.discussions.list(get_all=True):
         first_note_id = discussion.attributes['notes'][0]['id']
         first_note = discussion.notes.get(first_note_id)
 
@@ -238,7 +238,8 @@ def _singe_mr_grade_score_new(
     notes = [
         mr_score_discussion.notes.get(note['id'])
         for note in mr_score_discussion.attributes['notes']
-    ][1:]
+    ]
+    notes = notes[1:]
 
     if not notes:
         print_info('No replays on discussion note. Skip it.', color='grey')
@@ -307,7 +308,7 @@ def _single_mr_check_basic_checklist(
         *,
         dry_run: bool = False,
 ) -> None:
-    print_info('pipelines', [i.status for i in mr.pipelines.list()], color='grey')
+    print_info('pipelines', [i.status for i in mr.pipelines.list(get_all=True)], color='grey')
     print_info('labels', mr.labels, color='grey')
     print_info('source_branch', mr.source_branch, color='grey')
 
@@ -362,9 +363,9 @@ def _single_mr_check_basic_checklist(
     wrong_file = None
     for file in file_changed:
         if file.split('.')[-1] in BANNED_FILE_EXTENSIONS:
-            for allowed_file in ALLOWED_FILES:
-                if file.endswith(allowed_file):
-                    continue
+            print_info(f'  check {file}', color='grey')
+            if any(file.endswith(allowed_file) for allowed_file in ALLOWED_FILES):
+                continue
             have_no_additional_files = False
             wrong_file = file
             break
@@ -372,7 +373,7 @@ def _single_mr_check_basic_checklist(
     # Get Mr checks discussions
     mr_checklist_discussion = None
     mr_checklist_note = None
-    for discussion in mr.discussions.list():
+    for discussion in mr.discussions.list(get_all=True):
         first_note_id = discussion.attributes['notes'][0]['id']
         note = discussion.notes.get(first_note_id)
 
