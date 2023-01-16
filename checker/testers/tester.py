@@ -96,6 +96,9 @@ class Tester:
         elif system == 'cpp':
             from . import cpp
             return cpp.CppTester(cleanup=cleanup, dry_run=dry_run)
+        elif system == 'cpp2':
+            from .cpp2 import cpp2
+            return cpp2.Cpp2Tester(cleanup=cleanup, dry_run=dry_run)
         else:
             raise TesterNotImplemented(f'Tester for <{system}> are not supported right now')
 
