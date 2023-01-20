@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import shutil
 from pathlib import Path
+from .print import print_info
 
 
 def filename_match_patterns(
@@ -26,6 +27,7 @@ def copy_files(
         target: Path,
         patterns: list[str] | None = None,
         ignore_patterns: list[str] | None = None,
+        print_files: bool = False
 ) -> None:
     """
     Copy files between 2 directories
@@ -33,6 +35,7 @@ def copy_files(
     @param target: Directory or file to copy to
     @param patterns: Patterns to copy
     @param ignore_patterns: Patterns to ignore during copy
+    @param print_files: Print copied files
     @return: None
     """
     ignore_patterns = ignore_patterns or []
@@ -56,7 +59,8 @@ def copy_files(
                     ignore_patterns=ignore_patterns,
                 )
                 continue
-
+            if print_files:
+                print_info(f'Copy {source_path}')
             shutil.copyfile(str(source_path), str(target_path))
 
 

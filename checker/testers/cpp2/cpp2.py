@@ -4,11 +4,12 @@ from abc import abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 import random
+import xml.etree.ElementTree as ET
 
 from ...exceptions import (
+    RunFailedError,
     BuildFailedError,
     ExecutionFailedError,
-    StylecheckFailedError,
     TestsFailedError,
     TimeoutExpiredError,
 )
@@ -73,7 +74,7 @@ class BenchStrategy(CppStrategy):
             self,
             executor: Sandbox,
             test_config: Cpp2Tester.TaskTestConfig,
-            build_dir: Path,
+            build_dir_unused: Path,
             source_dir: Path,
             public_tests_dir: Path,
             private_tests_dir: Path,
@@ -81,21 +82,17 @@ class BenchStrategy(CppStrategy):
             verbose: bool = False,
             normalize_output: bool = False,
     ) -> None:
-        check_files_contains_regexp(
-            source_dir,
-            regexps=test_config.forbidden_regexp,
-            patterns=test_config.allow_change,
-            raise_on_found=True,
-        )
         self.reference_root = public_tests_dir.parent
-        task_name = source_dir.name
-        task_dir = self.reference_root / task_name
+        task_dir = self.reference_root / source_dir.name
+
+        print_info('Copying task files...', color='orange')
         executor(
             copy_files,
             source=source_dir,
             target=task_dir,
             patterns=test_config.allow_change,
             verbose=verbose,
+            print_files=True,
         )
 
         for test_binary, build_type in test_config.tests:
@@ -110,29 +107,55 @@ class BenchStrategy(CppStrategy):
             except ExecutionFailedError:
                 raise BuildFailedError(f'Can\'t build {test_binary}')
 
-        try:
-            print_info('Running clang format...', color='orange')
-            format_path = self.reference_root / 'run-clang-format.py'
-            executor(
-                [str(format_path), '-r', str(task_dir)],
-                cwd=build_dir,
-                verbose=verbose,
-            )
-            print_info('[No issues]')
-        except ExecutionFailedError:
-            raise StylecheckFailedError('Style error (clang format)')
+        error_messages: list[str] = []
 
         try:
-            print_info('Running clang tidy...', color='orange')
-            files = [str(file) for file in task_dir.rglob('*.cpp')]
+            print_info('Running clang format...', color='orange')
+            format_path = str(self.reference_root / 'run-clang-format.py')
             executor(
-                ['clang-tidy', '-p', '.', *files],
+                [format_path, '-r', str(task_dir)],
                 cwd=build_dir,
                 verbose=verbose,
             )
             print_info('[No issues]')
         except ExecutionFailedError:
-            raise StylecheckFailedError('Style error (clang tidy)')
+            error_messages.append('Style error (clang format)')
+
+        files: list[str] = []
+        for r in test_config.allow_change:
+            files += list(map(str, task_dir.glob(r)))
+
+        if files:
+            try:
+                print_info('Running clang tidy...', color='orange')
+                executor(
+                    ['clang-tidy', '-p', '.', *files],
+                    cwd=build_dir,
+                    verbose=verbose,
+                )
+                print_info('[No issues]')
+            except ExecutionFailedError:
+                error_messages.append('Style error (clang tidy)')
+
+            forbidden: list[str] = []
+            for f in test_config.forbidden:
+                forbidden += ['-f', f]
+            try:
+                print_info(f'Checking prohibited features...', color='orange')
+                executor(
+                    ['./check_forbidden', '-p', '.', *(forbidden + files)],
+                    cwd=self.reference_root / 'build-relwithdebinfo',
+                    verbose=verbose,
+                )
+                print_info('[No issues]')
+            except ExecutionFailedError:
+                error_messages.append('Using of prohibited features')
+
+        if not error_messages:
+            return
+        elif len(error_messages) > 1:
+            error_messages = [str(i + 1) + ') ' + m for i, m in enumerate(error_messages)]
+        raise RunFailedError('\n\n' + '\n'.join(error_messages))
 
     def clean_build(
             self,
@@ -175,9 +198,13 @@ class BenchStrategy(CppStrategy):
             verbose: bool = False,
             normalize_output: bool = False,
     ) -> float:
+        report_path: Path = None
         for test_binary, build_type in test_config.tests:
-            build_dir = self.reference_root / f'build-{build_type.lower()}'
+            t = build_type.lower()
+            build_dir = self.reference_root / f'build-{t}'
             r = random.randint(0, 10 ** 20)
+            if t == 'relwithdebinfo':
+                report_path = build_dir / f'report_{r}.xml'
             try:
                 print_info(f'Running {test_binary} ({build_type})...', color='orange')
                 executor([
@@ -203,6 +230,24 @@ class BenchStrategy(CppStrategy):
             finally:
                 for file in [f'report_{r}.txt', f'asan_{r}.*', f'tsan_{r}.*']:
                     BenchStrategy._cat(file, executor, build_dir, verbose, normalize_output)
+        if report_path is None:
+            raise RunFailedError('Cannot find bench result')
+        
+        results: dict[str, float] = {}
+        for b in ET.parse(report_path).iter('BenchmarkResults'):
+            results[b.get('name')] = float(b.find('mean').get('value'))
+        if set(results.keys()) != set(test_config.bench):
+            raise RunFailedError('Cannot find bench result')
+
+        error_messages = []
+        for k, v in results.items():
+            r_time = 1e-9 * v
+            max_time = test_config.bench[k]
+            if r_time > max_time:
+                error_messages.append(f'Bench {k}: {r_time:.6f} > {max_time:.6f}')
+        if error_messages:
+            raise TestsFailedError('\n\n' + '\n'.join(error_messages))
+
         print_info('OK', color='green')
         return 1.
 
@@ -213,9 +258,10 @@ class Cpp2Tester(Tester):
     class TaskTestConfig(Tester.TaskTestConfig):
         task_type: str
         allow_change: list[str] = field(default_factory=list)
-        forbidden_regexp: list[str] = field(default_factory=list)
+        forbidden: list[str] = field(default_factory=list)
         tests: list[tuple[str, str]] = field(default_factory=list)
         timeout: float = 60.
+        bench: dict[str, float] = field(default_factory=dict)
 
         def __post_init__(self) -> None:
             assert self.task_type in ['bench']
