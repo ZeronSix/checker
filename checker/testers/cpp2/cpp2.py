@@ -230,21 +230,27 @@ class BenchStrategy(CppStrategy):
             finally:
                 for file in [f'report_{r}.txt', f'asan_{r}.*', f'tsan_{r}.*']:
                     BenchStrategy._cat(file, executor, build_dir, verbose, normalize_output)
-        if report_path is None:
+
+        if not test_config.bench and report_path is None:
+            print_info('OK', color='green')
+            return 1.
+        elif report_path is None:
             raise RunFailedError('Cannot find bench result')
         
-        results: dict[str, float] = {}
+        bench_results: dict[str, float] = {}
         for b in ET.parse(report_path).iter('BenchmarkResults'):
-            results[b.get('name')] = float(b.find('mean').get('value'))
-        if set(results.keys()) != set(test_config.bench):
+            bench_results[b.get('name')] = float(b.find('mean').get('value'))
+        if set(bench_results.keys()) != set(test_config.bench):
             raise RunFailedError('Cannot find bench result')
 
         error_messages = []
-        for k, v in results.items():
-            r_time = 1e-9 * v
-            max_time = test_config.bench[k]
-            if r_time > max_time:
-                error_messages.append(f'Bench {k}: {r_time:.6f} > {max_time:.6f}')
+        for name, time in bench_results.items():
+            time *= 1e-9
+            threshold = test_config.bench[name]
+            if threshold >= 0 and time > threshold:
+                error_messages.append(f'Bench {name}: {time:g} > {threshold:g}')
+            elif threshold < 0 and time < -threshold:
+                error_messages.append(f'Bench {name}: {time:g} < {-threshold:g}')
         if error_messages:
             raise TestsFailedError('\n\n' + '\n'.join(error_messages))
 

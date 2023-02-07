@@ -60,7 +60,7 @@ def copy_files(
                 )
                 continue
             if print_files:
-                print_info(f'Copy {source_path}')
+                print_info(f'Copy {source_path}\n  to {target_path}')
             shutil.copyfile(str(source_path), str(target_path))
 
 
