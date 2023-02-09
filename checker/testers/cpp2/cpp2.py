@@ -204,13 +204,13 @@ class BenchStrategy(CppStrategy):
             build_dir = self.reference_root / f'build-{t}'
             r = random.randint(0, 10 ** 20)
             if t == 'relwithdebinfo':
-                report_path = build_dir / f'report_{r}.xml'
+                report_path = f'/tmp/report_{r}.xml'
             try:
                 print_info(f'Running {test_binary} ({build_type})...', color='orange')
                 executor([
                         str(build_dir / test_binary),
-                        '-r', f'xml::out=report_{r}.xml',
-                        '-r', f'console::out=report_{r}.txt::colour-mode=ansi',
+                        '-r', f'xml::out=/tmp/report_{r}.xml',
+                        '-r', f'console::out=/tmp/report_{r}.txt::colour-mode=ansi',
                     ],
                     sandbox=True,
                     cwd=build_dir,
@@ -218,8 +218,8 @@ class BenchStrategy(CppStrategy):
                     capture_output=True,
                     timeout=test_config.timeout,
                     env={
-                        'ASAN_OPTIONS': f'log_path=asan_{r},color=always',
-                        'TSAN_OPTIONS': f'log_path=tsan_{r},color=always',
+                        'ASAN_OPTIONS': f'log_path=/tmp/asan_{r},color=always',
+                        'TSAN_OPTIONS': f'log_path=/tmp/tsan_{r},color=always',
                     }
                 )
             except TimeoutExpiredError:
@@ -229,14 +229,14 @@ class BenchStrategy(CppStrategy):
                 raise TestsFailedError('Test failed')
             finally:
                 for file in [f'report_{r}.txt', f'asan_{r}.*', f'tsan_{r}.*']:
-                    BenchStrategy._cat(file, executor, build_dir, verbose, normalize_output)
+                    BenchStrategy._cat(file, executor, Path("/tmp"), verbose, normalize_output)
 
         if not test_config.bench and report_path is None:
             print_info('OK', color='green')
             return 1.
         elif report_path is None:
             raise RunFailedError('Cannot find bench result')
-        
+
         bench_results: dict[str, float] = {}
         for b in ET.parse(report_path).iter('BenchmarkResults'):
             bench_results[b.get('name')] = float(b.find('mean').get('value'))
