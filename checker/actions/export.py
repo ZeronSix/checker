@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -154,10 +155,12 @@ def export_public_files(
     for f in sorted(files_and_dirs_to_add):
         relative_filename = str(f.relative_to(course_driver.root_dir))
         print_info(f'  {relative_filename}', color='grey')
+        dest_path = export_dir / relative_filename
+        os.makedirs(os.path.dirname(dest_path), exist_ok=True)
         if f.is_dir():
-            shutil.copytree(f, export_dir / relative_filename)
+            shutil.copytree(f, dest_path)
         else:
-            shutil.copy(f, export_dir / relative_filename)
+            shutil.copy(f, dest_path)
 
     added_files: set[str] = set()
     for path in export_dir.glob('*'):
