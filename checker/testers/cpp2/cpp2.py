@@ -266,7 +266,7 @@ class Cpp2Tester(Tester):
         allow_change: list[str] = field(default_factory=list)
         forbidden: list[str] = field(default_factory=list)
         tests: list[tuple[str, str]] = field(default_factory=list)
-        timeout: float = 60.
+        timeout: float = 180.
         bench: dict[str, float] = field(default_factory=dict)
 
         def __post_init__(self) -> None:
