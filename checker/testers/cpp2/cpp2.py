@@ -231,7 +231,7 @@ class BenchStrategy(CppStrategy):
                 for file in [f'report_{r}.txt', f'asan_{r}.*', f'tsan_{r}.*']:
                     BenchStrategy._cat(file, executor, Path("/tmp"), verbose, normalize_output)
 
-        if not test_config.bench and report_path is None:
+        if not test_config.bench:
             print_info('OK', color='green')
             return 1.
         elif report_path is None:
