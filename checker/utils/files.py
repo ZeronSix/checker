@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import shutil
 from pathlib import Path
@@ -61,6 +62,7 @@ def copy_files(
                 continue
             if print_files:
                 print_info(f'Copy {source_path}\n  to {target_path}')
+            os.makedirs(os.path.dirname(target_path), exist_ok=True)
             shutil.copyfile(str(source_path), str(target_path))
 
 
