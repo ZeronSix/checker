@@ -62,6 +62,133 @@ class CppStrategy:
     ) -> float:  # pragma: nocover
         pass
 
+class ComposeStrategy(CppStrategy):
+    def __init__(self, strategies : list[CppStrategy]):
+        assert strategies
+        self.strategies = strategies
+
+    @abstractmethod
+    def check_config(
+        self,
+        test_config: Cpp2Tester.TaskTestConfig,
+    ) -> None:  # pragma: nocover
+        for s in self.strategies:
+            s.check_config(test_config)
+
+    @abstractmethod
+    def gen_build(
+            self,
+            executor: Sandbox,
+            test_config: Cpp2Tester.TaskTestConfig,
+            build_dir: Path,
+            source_dir: Path,
+            public_tests_dir: Path,
+            private_tests_dir: Path,
+            sandbox: bool = True,
+            verbose: bool = False,
+            normalize_output: bool = False,
+    ) -> None:  # pragma: nocover
+        for s in self.strategies:
+            s.gen_build(
+                executor=executor,
+                test_config=test_config,
+                build_dir=build_dir,
+                source_dir=source_dir,
+                public_tests_dir=public_tests_dir,
+                private_tests_dir=private_tests_dir,
+                sandbox=sandbox,
+                verbose=verbose,
+                normalize_output=normalize_output,
+            )
+
+    @abstractmethod
+    def clean_build(
+            self,
+            executor: Sandbox,
+            test_config: Cpp2Tester.TaskTestConfig,
+            build_dir: Path,
+            verbose: bool = False,
+    ) -> None:  # pragma: nocover
+        for s in self.strategies:
+            s.clean_build(
+                executor=executor,
+                test_config=test_config,
+                build_dir=build_dir,
+                verbose=verbose,
+            )
+
+    @abstractmethod
+    def run_tests(
+            self,
+            executor: Sandbox,
+            test_config: Cpp2Tester.TaskTestConfig,
+            build_dir: Path,
+            sandbox: bool = False,
+            verbose: bool = False,
+            normalize_output: bool = False,
+    ) -> float:  # pragma: nocover
+        return min([s.run_tests(
+            executor=executor,
+            test_config=test_config,
+            build_dir=build_dir,
+            sandbox=sandbox,
+            verbose=verbose,
+            normalize_output=normalize_output,
+        ) for s in self.strategies])
+
+class FlagStrategy(CppStrategy):
+    @abstractmethod
+    def check_config(
+        self,
+        test_config: Cpp2Tester.TaskTestConfig,
+    ) -> None:  # pragma: nocover
+        assert test_config.answer
+
+    @abstractmethod
+    def gen_build(
+            self,
+            executor: Sandbox,
+            test_config: Cpp2Tester.TaskTestConfig,
+            build_dir: Path,
+            source_dir: Path,
+            public_tests_dir: Path,
+            private_tests_dir: Path,
+            sandbox: bool = True,
+            verbose: bool = False,
+            normalize_output: bool = False,
+    ) -> None:  # pragma: nocover
+        path = source_dir / 'flag.txt'
+        if not path.exists():
+            raise RunFailedError('\nCan\'t find flag.txt')
+        with open(path, 'r') as f:
+            lines = f.read().splitlines()
+        self.flag = "" if not lines else lines[0]
+
+    @abstractmethod
+    def clean_build(
+            self,
+            executor: Sandbox,
+            test_config: Cpp2Tester.TaskTestConfig,
+            build_dir: Path,
+            verbose: bool = False,
+    ) -> None:  # pragma: nocover
+        pass
+
+    @abstractmethod
+    def run_tests(
+            self,
+            executor: Sandbox,
+            test_config: Cpp2Tester.TaskTestConfig,
+            build_dir: Path,
+            sandbox: bool = False,
+            verbose: bool = False,
+            normalize_output: bool = False,
+    ) -> float:  # pragma: nocover
+        if self.flag == test_config.answer:
+            print_info('Flag OK', color='green')
+            return 1.
+        raise TestsFailedError(f'\nWrong flag: {self.flag}')
+
 class BenchStrategy(CppStrategy):
     def check_config(
         self,
@@ -74,7 +201,7 @@ class BenchStrategy(CppStrategy):
             self,
             executor: Sandbox,
             test_config: Cpp2Tester.TaskTestConfig,
-            build_dir_unused: Path,
+            build_dir: Path,
             source_dir: Path,
             public_tests_dir: Path,
             private_tests_dir: Path,
@@ -223,10 +350,10 @@ class BenchStrategy(CppStrategy):
                     }
                 )
             except TimeoutExpiredError:
-                message = f'Your solution exceeded time limit: {test_config.timeout} seconds'
+                message = f'\nYour solution exceeded time limit: {test_config.timeout} seconds'
                 raise TestsFailedError(message)
             except ExecutionFailedError:
-                raise TestsFailedError('Test failed')
+                raise TestsFailedError('\nTest failed')
             finally:
                 for file in [f'report_{r}.txt', f'asan_{r}.*', f'tsan_{r}.*']:
                     BenchStrategy._cat(file, executor, Path("/tmp"), verbose, normalize_output)
@@ -235,13 +362,13 @@ class BenchStrategy(CppStrategy):
             print_info('OK', color='green')
             return 1.
         elif report_path is None:
-            raise RunFailedError('Cannot find bench result')
+            raise RunFailedError('\nCannot find bench result')
 
         bench_results: dict[str, float] = {}
         for b in ET.parse(report_path).iter('BenchmarkResults'):
             bench_results[b.get('name')] = float(b.find('mean').get('value'))
         if set(bench_results.keys()) != set(test_config.bench):
-            raise RunFailedError('Cannot find bench result')
+            raise RunFailedError('\nCannot find bench result')
 
         error_messages = []
         for name, time in bench_results.items():
@@ -268,13 +395,26 @@ class Cpp2Tester(Tester):
         tests: list[tuple[str, str]] = field(default_factory=list)
         timeout: float = 180.
         bench: dict[str, float] = field(default_factory=dict)
+        answer: str = ""
+
+        def _get_strategy(self, name: str) -> CppStrategy:
+            if name == 'bench':
+                return BenchStrategy()
+            elif name == 'flag':
+                return FlagStrategy()
+            else:
+                raise RunFailedError('Unknown strategy') 
+
+        def _get_compose(self, names: list[str]) -> ComposeStrategy:
+            strategies = [self._get_strategy(name) for name in names]
+            return ComposeStrategy(strategies)
 
         def __post_init__(self) -> None:
-            assert self.task_type in ['bench']
-            if self.task_type == 'bench':
-                self.strategy = BenchStrategy()
+            names = self.task_type.split(',')
+            if len(names) == 1:
+                self.strategy = self._get_strategy(names[0])
             else:
-                self.strategy = BenchStrategy()
+                self.strategy = self._get_compose(names)
             self.strategy.check_config(self)
 
     def _gen_build(  # type: ignore[override]
