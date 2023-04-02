@@ -253,16 +253,17 @@ class BenchStrategy(CppStrategy):
             files += list(map(str, task_dir.glob(r)))
 
         if files:
-            try:
-                print_info('Running clang tidy...', color='orange')
-                executor(
-                    ['clang-tidy', '-p', '.', *files],
-                    cwd=build_dir,
-                    verbose=verbose,
-                )
-                print_info('[No issues]')
-            except ExecutionFailedError:
-                error_messages.append('Style error (clang tidy)')
+            if not test_config.nolint:
+                try:
+                    print_info('Running clang tidy...', color='orange')
+                    executor(
+                        ['clang-tidy', '-p', '.', *files],
+                        cwd=build_dir,
+                        verbose=verbose,
+                    )
+                    print_info('[No issues]')
+                except ExecutionFailedError:
+                    error_messages.append('Style error (clang tidy)')
 
             forbidden: list[str] = []
             for f in test_config.forbidden:
@@ -396,6 +397,7 @@ class Cpp2Tester(Tester):
         timeout: float = 180.
         bench: dict[str, float] = field(default_factory=dict)
         answer: str = ""
+        nolint: bool = False
 
         def _get_strategy(self, name: str) -> CppStrategy:
             if name == 'bench':
