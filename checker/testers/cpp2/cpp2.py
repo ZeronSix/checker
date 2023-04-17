@@ -236,21 +236,21 @@ class BenchStrategy(CppStrategy):
 
         error_messages: list[str] = []
 
+        files: list[str] = []
+        for r in test_config.allow_change:
+            files += list(map(str, task_dir.glob(r)))
+
         try:
             print_info('Running clang format...', color='orange')
             format_path = str(self.reference_root / 'run-clang-format.py')
             executor(
-                [format_path, '-r', str(task_dir)],
+                [format_path, '-r', *files],
                 cwd=build_dir,
                 verbose=verbose,
             )
             print_info('[No issues]')
         except ExecutionFailedError:
             error_messages.append('Style error (clang format)')
-
-        files: list[str] = []
-        for r in test_config.allow_change:
-            files += list(map(str, task_dir.glob(r)))
 
         if files:
             if not test_config.nolint:
