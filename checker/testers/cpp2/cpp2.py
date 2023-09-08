@@ -239,12 +239,15 @@ class BenchStrategy(CppStrategy):
         files: list[str] = []
         for r in test_config.allow_change:
             files += list(map(str, task_dir.glob(r)))
+        lint_files = []
+        for f in test_config.lint_files:
+            lint_files += list(map(str, task_dir.glob(f)))
 
         try:
             print_info('Running clang format...', color='orange')
             format_path = str(self.reference_root / 'run-clang-format.py')
             executor(
-                [format_path, '-r', *files],
+                [format_path, '-r', *lint_files],
                 cwd=build_dir,
                 verbose=verbose,
             )
@@ -257,7 +260,7 @@ class BenchStrategy(CppStrategy):
                 try:
                     print_info('Running clang tidy...', color='orange')
                     executor(
-                        ['clang-tidy', '-p', '.', *files],
+                        ['clang-tidy', '-p', '.', *lint_files],
                         cwd=build_dir,
                         verbose=verbose,
                     )
@@ -396,8 +399,9 @@ class Cpp2Tester(Tester):
         tests: list[tuple[str, str]] = field(default_factory=list)
         timeout: float = 180.
         bench: dict[str, float] = field(default_factory=dict)
-        answer: str = ""
+        answer: str = ''
         nolint: bool = False
+        lint_files: list[str] = field(default_factory=lambda: ['**/*.h', '**/*.cpp'])
 
         def _get_strategy(self, name: str) -> CppStrategy:
             if name == 'bench':
