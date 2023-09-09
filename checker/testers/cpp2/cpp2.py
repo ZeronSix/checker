@@ -271,6 +271,8 @@ class BenchStrategy(CppStrategy):
             forbidden: list[str] = []
             for f in test_config.forbidden:
                 forbidden += ['-f', f]
+            for f in test_config.forbidden_files:
+                forbidden += ['-ff', f]
             try:
                 print_info(f'Checking prohibited features...', color='orange')
                 executor(
@@ -396,6 +398,7 @@ class Cpp2Tester(Tester):
         task_type: str
         allow_change: list[str] = field(default_factory=list)
         forbidden: list[str] = field(default_factory=list)
+        forbidden_files: list[str] = field(default_factory=list)
         tests: list[tuple[str, str]] = field(default_factory=list)
         timeout: float = 180.
         bench: dict[str, float] = field(default_factory=dict)
