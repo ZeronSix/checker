@@ -13,9 +13,11 @@ from ...exceptions import (
     TestsFailedError,
     TimeoutExpiredError,
 )
-from ...utils.files import check_files_contains_regexp, copy_files
+from ...utils.files import copy_files
 from ...utils.print import print_info
 from ..tester import Tester
+from ...executors.sandbox import Sandbox
+
 
 class CppStrategy:
     @abstractmethod
@@ -62,8 +64,9 @@ class CppStrategy:
     ) -> float:  # pragma: nocover
         pass
 
+
 class ComposeStrategy(CppStrategy):
-    def __init__(self, strategies : list[CppStrategy]):
+    def __init__(self, strategies: list[CppStrategy]):
         assert strategies
         self.strategies = strategies
 
@@ -136,6 +139,7 @@ class ComposeStrategy(CppStrategy):
             normalize_output=normalize_output,
         ) for s in self.strategies])
 
+
 class FlagStrategy(CppStrategy):
     @abstractmethod
     def check_config(
@@ -188,6 +192,7 @@ class FlagStrategy(CppStrategy):
             print_info('Flag OK', color='green')
             return 1.
         raise TestsFailedError(f'\nWrong flag: {self.flag}')
+
 
 class BenchStrategy(CppStrategy):
     def check_config(
@@ -274,7 +279,7 @@ class BenchStrategy(CppStrategy):
             for f in test_config.forbidden_files:
                 forbidden += ['-ff', f]
             try:
-                print_info(f'Checking prohibited features...', color='orange')
+                print_info('Checking prohibited features...', color='orange')
                 executor(
                     ['./check_forbidden', '-p', '.', *(forbidden + files)],
                     cwd=self.reference_root / 'build-relwithdebinfo',
@@ -351,6 +356,7 @@ class BenchStrategy(CppStrategy):
                     capture_output=True,
                     timeout=test_config.timeout,
                     env={
+                        'UBSAN_OPTIONS': f'log_path=/tmp/ubsan_{r},color=always,print_stacktrace=1',
                         'ASAN_OPTIONS': f'log_path=/tmp/asan_{r},color=always',
                         'TSAN_OPTIONS': f'log_path=/tmp/tsan_{r},color=always',
                     }
@@ -361,7 +367,7 @@ class BenchStrategy(CppStrategy):
             except ExecutionFailedError:
                 raise TestsFailedError('\nTest failed')
             finally:
-                for file in [f'report_{r}.txt', f'asan_{r}.*', f'tsan_{r}.*']:
+                for file in [f'report_{r}.txt', f'ubsan_{r}.*', f'asan_{r}.*', f'tsan_{r}.*']:
                     BenchStrategy._cat(file, executor, Path("/tmp"), verbose, normalize_output)
 
         if not test_config.bench:
@@ -412,7 +418,7 @@ class Cpp2Tester(Tester):
             elif name == 'flag':
                 return FlagStrategy()
             else:
-                raise RunFailedError('Unknown strategy') 
+                raise RunFailedError('Unknown strategy')
 
         def _get_compose(self, names: list[str]) -> ComposeStrategy:
             strategies = [self._get_strategy(name) for name in names]
