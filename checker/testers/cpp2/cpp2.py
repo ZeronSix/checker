@@ -314,7 +314,6 @@ class BenchStrategy(CppStrategy):
         executor: Sandbox,
         build_dir: Path,
         verbose: bool,
-        capture_output: bool,
     ):
         files = [str(f) for f in build_dir.rglob(regexp)]
         if not files:
@@ -324,7 +323,7 @@ class BenchStrategy(CppStrategy):
             sandbox=True,
             cwd=build_dir,
             verbose=verbose,
-            capture_output=capture_output,
+            capture_output=False,
         )
 
     def run_tests(
@@ -350,7 +349,7 @@ class BenchStrategy(CppStrategy):
                         '-r', f'xml::out=/tmp/report_{r}.xml',
                         '-r', f'console::out=/tmp/report_{r}.txt::colour-mode=ansi',
                     ],
-                    sandbox=True,
+                    sandbox=sandbox,
                     cwd=build_dir,
                     verbose=verbose,
                     capture_output=True,
@@ -368,7 +367,7 @@ class BenchStrategy(CppStrategy):
                 raise TestsFailedError('\nTest failed')
             finally:
                 for file in [f'report_{r}.txt', f'ubsan_{r}.*', f'asan_{r}.*', f'tsan_{r}.*']:
-                    BenchStrategy._cat(file, executor, Path("/tmp"), verbose, normalize_output)
+                    BenchStrategy._cat(file, executor, Path("/tmp"), verbose)
 
         if not test_config.bench:
             print_info('OK', color='green')
@@ -482,5 +481,5 @@ class Cpp2Tester(Tester):
             build_dir,
             sandbox=sandbox,
             verbose=verbose,
-            normalize_output=False,
+            normalize_output=normalize_output,
         )
