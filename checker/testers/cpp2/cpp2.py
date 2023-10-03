@@ -344,10 +344,12 @@ class BenchStrategy(CppStrategy):
                 report_path = f'/tmp/report_{r}.xml'
             try:
                 print_info(f'Running {test_binary} ({build_type})...', color='orange')
+                args = test_config.args.get(build_type, [])
                 executor([
                         str(build_dir / test_binary),
                         '-r', f'xml::out=/tmp/report_{r}.xml',
                         '-r', f'console::out=/tmp/report_{r}.txt::colour-mode=ansi',
+                        *args
                     ],
                     sandbox=sandbox,
                     cwd=build_dir,
@@ -410,6 +412,7 @@ class Cpp2Tester(Tester):
         answer: str = ''
         nolint: bool = False
         lint_files: list[str] = field(default_factory=lambda: ['**/*.h', '**/*.cpp'])
+        args: dict[str, list[str]] = field(default_factory=dict)
 
         def _get_strategy(self, name: str) -> CppStrategy:
             if name == 'bench':
