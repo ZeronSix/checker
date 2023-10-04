@@ -309,7 +309,7 @@ class BenchStrategy(CppStrategy):
         )
 
     @staticmethod
-    def _cat(
+    def cat(
         regexp: str,
         executor: Sandbox,
         build_dir: Path,
@@ -369,7 +369,7 @@ class BenchStrategy(CppStrategy):
                 raise TestsFailedError('\nTest failed')
             finally:
                 for file in [f'report_{r}.txt', f'ubsan_{r}.*', f'asan_{r}.*', f'tsan_{r}.*']:
-                    BenchStrategy._cat(file, executor, Path("/tmp"), verbose)
+                    BenchStrategy.cat(file, executor, Path("/tmp"), verbose)
 
         if not test_config.bench:
             print_info('OK', color='green')
@@ -398,6 +398,99 @@ class BenchStrategy(CppStrategy):
         return 1.
 
 
+class CrashMeStrategy(CppStrategy):
+    def check_config(
+        self,
+        test_config: Cpp2Tester.TaskTestConfig,
+    ) -> None:
+        assert test_config.allow_change
+        assert test_config.crash_me_name
+        assert test_config.crash_me_build
+        assert test_config.crash_me_run
+
+    def gen_build(
+            self,
+            executor: Sandbox,
+            test_config: Cpp2Tester.TaskTestConfig,
+            build_dir: Path,
+            source_dir: Path,
+            public_tests_dir: Path,
+            private_tests_dir: Path,
+            sandbox: bool = True,
+            verbose: bool = False,
+            normalize_output: bool = False,
+    ) -> None:
+        self.reference_root = public_tests_dir.parent
+        self.task_dir = self.reference_root / source_dir.name
+
+        print_info('Copying task files...', color='orange')
+        executor(
+            copy_files,
+            source=source_dir,
+            target=self.task_dir,
+            patterns=test_config.allow_change,
+            verbose=verbose,
+            print_files=True,
+        )
+
+        print_info(f'Building {test_config.crash_me_name}...', color='orange')
+        print_info(' '.join(test_config.crash_me_build))
+        executor(
+            test_config.crash_me_build,
+            cwd=self.task_dir,
+            verbose=verbose,
+        )
+
+    def clean_build(
+            self,
+            executor: Sandbox,
+            test_config: Cpp2Tester.TaskTestConfig,
+            build_dir: Path,
+            verbose: bool = False,
+    ) -> None:
+        executor(
+            ['rm', '-rf', str(build_dir)],
+            check=False,
+            verbose=verbose,
+        )
+
+    def run_tests(
+            self,
+            executor: Sandbox,
+            test_config: Cpp2Tester.TaskTestConfig,
+            build_dir: Path,
+            sandbox: bool = False,
+            verbose: bool = False,
+            normalize_output: bool = False,
+    ) -> float:
+        r = random.randint(0, 10 ** 20)
+        print_info(f'Running {test_config.crash_me_name}...', color='orange')
+        try:
+            with open(self.task_dir / 'input.txt', 'r') as stdin:
+                executor(
+                    test_config.crash_me_run,
+                    sandbox=sandbox,
+                    cwd=self.task_dir,
+                    verbose=verbose,
+                    timeout=test_config.timeout,
+                    env={
+                        'UBSAN_OPTIONS': f'log_path=/tmp/ubsan_{r},color=always,print_stacktrace=1',
+                        'ASAN_OPTIONS': f'log_path=/tmp/asan_{r},color=always',
+                        'TSAN_OPTIONS': f'log_path=/tmp/tsan_{r},color=always',
+                    },
+                    stdin=stdin
+                )
+        except TimeoutExpiredError:
+            message = f'\nYour solution exceeded time limit: {test_config.timeout} seconds'
+            raise TestsFailedError(message)
+        except ExecutionFailedError:
+            for file in [f'report_{r}.txt', f'ubsan_{r}.*', f'asan_{r}.*', f'tsan_{r}.*']:
+                BenchStrategy.cat(file, executor, Path("/tmp"), verbose)
+            print_info('OK', color='green')
+            return 1.
+        raise TestsFailedError('\nProgram has not crashed')
+
+
 class Cpp2Tester(Tester):
 
     @dataclass
@@ -414,11 +507,17 @@ class Cpp2Tester(Tester):
         lint_files: list[str] = field(default_factory=lambda: ['**/*.h', '**/*.cpp'])
         args: dict[str, list[str]] = field(default_factory=dict)
 
+        crash_me_name: str = ""
+        crash_me_build: list[str] = ""
+        crash_me_run: list[str] = ""
+
         def _get_strategy(self, name: str) -> CppStrategy:
             if name == 'bench':
                 return BenchStrategy()
             elif name == 'flag':
                 return FlagStrategy()
+            elif name == 'crash_me':
+                return CrashMeStrategy()
             else:
                 raise RunFailedError('Unknown strategy')
 
