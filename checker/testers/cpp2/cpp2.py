@@ -265,7 +265,7 @@ class BenchStrategy(CppStrategy):
                 try:
                     print_info('Running clang tidy...', color='orange')
                     executor(
-                        ['clang-tidy', '-p', '.', *lint_files],
+                        ['clang-tidy', '-p', '.', '--quiet', *lint_files],
                         cwd=build_dir,
                         verbose=verbose,
                     )
@@ -345,6 +345,9 @@ class BenchStrategy(CppStrategy):
             try:
                 print_info(f'Running {test_binary} ({build_type})...', color='orange')
                 args = test_config.args.get(build_type, [])
+                asan_opts = f'log_path=/tmp/asan_{r},color=always'
+                if test_config.no_detect_leaks:
+                    asan_opts += ',detect_leaks=0'
                 executor([
                         str(build_dir / test_binary),
                         '-r', f'xml::out=/tmp/report_{r}.xml',
@@ -358,7 +361,7 @@ class BenchStrategy(CppStrategy):
                     timeout=test_config.timeout,
                     env={
                         'UBSAN_OPTIONS': f'log_path=/tmp/ubsan_{r},color=always,print_stacktrace=1',
-                        'ASAN_OPTIONS': f'log_path=/tmp/asan_{r},color=always',
+                        'ASAN_OPTIONS': asan_opts,
                         'TSAN_OPTIONS': f'log_path=/tmp/tsan_{r},color=always',
                     }
                 )
@@ -506,6 +509,7 @@ class Cpp2Tester(Tester):
         nolint: bool = False
         lint_files: list[str] = field(default_factory=lambda: ['**/*.h', '**/*.cpp'])
         args: dict[str, list[str]] = field(default_factory=dict)
+        no_detect_leaks: bool = False
 
         crash_me_name: str = ""
         crash_me_build: list[str] = ""
