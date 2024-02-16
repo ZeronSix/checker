@@ -1,56 +1,50 @@
 name: Publish
 
-# on release created (tag auto created)
+
 on:
   release:
     types:
       - released
-#  push:
-#    # Sequence of patterns matched against refs/tags
-#    tags:
-#      - '*.*.*' # i.e. 1.0.0, 20.15.10
+  push:
+    branches:
+      - main
+
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: false
+
 
 jobs:
-
-  update-version-and-changelog-files:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v3
-      with:
-        ref: ${{ github.event.repository.default_branch }}
-        token: ${{ secrets.MANYTASK_BOT_TOKEN }}
-    - name: Setup git
-      run: |
-        git config --global user.name 'manytask-bot'
-        git config --global user.email 'manytask-bot@users.noreply.github.com'
-    - name: Update version file
-      run: |
-        echo "Update version to ${{github.ref_name}}"
-        echo -n "${{github.ref_name}}" > VERSION
-    - name: Update changelog file
-      run: |
-        # TODO: update CHANGELOG.md with release notes
-        echo "Update CHANGELOG to ${{github.ref_name}}"
-    - name: Commit updated files
-      run: |
-        git add VERSION CHANGELOG.md
-        git commit -m "chore: auto version and changelog update (${{ github.ref_name }})" -m "[no ci]" || true
-        git push origin
-    - name: Tag new commit
-      run: |
-        git tag --force ${{ github.ref_name }}
-        git push origin ${{ github.ref_name }} --force
-    
+  update-version-changelog:
+    if: github.event_name == 'release'
+    uses: manytask/.github/.github/workflows/reusable-update-changelog-version.yml@main
+    permissions:
+      contents: write
+    with:
+      release_tag: ${{ github.event.release.tag_name }}
+      release_target: ${{ github.event.release.target_commitish }}
+      release_body: ${{ github.event.release.body }}
+      release_url: ${{ github.event.release.html_url }}
+    secrets:
+      token: ${{ secrets.MANYTASK_SERVICE_PUSH_TOKEN }}
 
   release-python-package:
-    needs: update-version-and-changelog-files
+    if: github.event_name == 'release'
+    needs: update-version-changelog
     runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/manytask-checker
+    permissions:
+      deployments: write
+      id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
     steps:
-    - uses: actions/checkout@v3
-    - name: Setup Python 3.9
-      uses: actions/setup-python@v3
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
       with:
-        python-version: 3.9
+        python-version: 3.11
+        cache: 'pip' # caching pip dependencies
     - name: Install requirements for package build
       run: |
         python -m pip install -U wheel twine
@@ -60,31 +54,46 @@ jobs:
         python -m pip wheel . --no-deps --wheel-dir dist
     - name: Publish to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
-      with:
-        password: ${{ secrets.PYPI_TOKEN }}
-        packages_dir: dist
 
-#  release-github-pages:
-#    runs-on: ubuntu-latest
-#    steps:
-#      - uses: actions/checkout@v3
-#      - name: Setup Python 3.9
-#        uses: actions/setup-python@v3
-#        with:
-#          python-version: 3.9
-#      - uses: actions/cache@v3
-#        with:
-#          path: ${{ env.pythonLocation }}
-#          key: ${{ runner.os }}-python-3.9-${{ env.pythonLocation }}-${{ hashFiles('pyproject.toml', 'setup.cfg') }}-docs
-#          restore-keys: |
-#            ${{ runner.os }}-python-3.9-
-#            ${{ runner.os }}-python-
-#            ${{ runner.os }}-
-#      - name: Install dependencies
-#        run: python -m pip install -e .[docs]
-#      - name: Build and publish docs
-#        run: |
-#          git fetch --all
-#          # lazydocs
-#          python -m mkdocs build --config-file docs/mkdocs.yml
-#          python -m mkdocs gh-deploy --config-file docs/mkdocs.yml --force
+  release-github-pages:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: fetch gh-pages
+        run: git fetch origin gh-pages:gh-pages
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+          cache: 'pip' # caching pip dependencies
+      - name: Install dependencies
+        run: |
+          python -m pip install -e .[docs]
+      - name: Setup doc deploy
+        run: |
+          git config --global user.name Docs deploy
+          git config --global user.email docs@dummy.bot.com
+      - name: Docs deploy
+        run: |
+          if [ "${{ github.event_name }}" == "release" ]; then
+            echo -n "${{github.ref_name}}" > VERSION
+            make docs-deploy
+          else
+            echo -n "main" > VERSION
+            make docs-deploy-main
+          fi
+
+  release-docker:
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+      fail-fast: false
+    uses: manytask/workflows/.github/workflows/reusable-docker-build-push.yml@main
+    with:
+      platforms: linux/amd64,linux/arm64
+      tags: manytask/checker:${{ github.ref_name }}-python${{ matrix.python-version }}
+      push: true
+    secrets:
+      registry_username: ${{ secrets.DOCKERHUB_USERNAME }}
+      registry_password: ${{ secrets.DOCKERHUB_TOKEN }}
