@@ -52,7 +52,7 @@ class CppRunTestsPlugin(PluginABC):
         paths_whitelist = [str(args.root / p) for p in args.paths_whitelist]
         run_args = SafeRunScriptPlugin.Args(
             origin=str(build_dir),
-            script=(["/usr/local/cuda/bin/compute-sanitizer"] if args.compute_sanitizer else [])
+            script=(["/usr/local/cuda/bin/compute-sanitizer", "--leak-check", "full"] if args.compute_sanitizer else [])
             + [
                 str(build_dir / target),
                 "-r",
