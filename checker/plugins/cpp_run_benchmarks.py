@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import os
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -81,6 +82,8 @@ class CppRunBenchmarksPlugin(PluginABC):
     @staticmethod
     def _run_benchmarks(args: Args, tmp_dir: Path, build_dir: Path, target: str, verbose: bool) -> None:
         xml_path = tmp_dir / CppRunBenchmarksPlugin._REPORT_XML
+        gpu_id = os.environ.get("BENCHMARK_GPU_ID", "0")
+        print_info(f"Running on GPU {gpu_id}")
         run_args = SafeRunScriptPlugin.Args(
             origin=str(build_dir),
             script=[
@@ -91,6 +94,7 @@ class CppRunBenchmarksPlugin(PluginABC):
                 f"console::out={tmp_dir / CppRunBenchmarksPlugin._REPORT}::colour-mode=ansi",
                 *args.args,
             ],
+            env_additional={"CUDA_VISIBLE_DEVICES": gpu_id},
             timeout=args.timeout,
         )
         try:
