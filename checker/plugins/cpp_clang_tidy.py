@@ -31,7 +31,7 @@ class CppClangTidyPlugin(PluginABC):
 
         run_args = SafeRunScriptPlugin.Args(
             origin=str(args.reference_root / (args.build_type if args.build_type is not None else "build-asan")),
-            script=["clang-tidy-19", "-p", ".", "--use-color", "--quiet", *lint_files],
+            script=["clang-tidy-20", "-p", ".", "--use-color", "--quiet", *lint_files],
             paths_whitelist=[str(args.reference_root)],
             paths_blacklist=get_cpp_blacklist(args.reference_root),
         )
