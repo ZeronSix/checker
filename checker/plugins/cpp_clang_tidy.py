@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 from checker.exceptions import PluginExecutionFailed
 from checker.plugins.cpp.blacklist import get_cpp_blacklist
