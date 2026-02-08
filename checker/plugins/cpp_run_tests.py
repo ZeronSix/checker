@@ -58,7 +58,7 @@ class CppRunTestsPlugin(PluginABC):
         run_args = SafeRunScriptPlugin.Args(
             origin=str(build_dir),
             script=(
-                ["compute-sanitizer", "--leak-check", "full", "--error-exitcode", "1"]
+                ["/usr/local/cuda/bin/compute-sanitizer", "--leak-check", "full", "--error-exitcode", "1"]
                 if args.cuda_compute_sanitizer
                 else []
             )
